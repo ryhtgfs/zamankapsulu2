@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Clock, Lock, ThumbsUp, MessageCircle, Send, Calendar, User, Moon, Sun, Search, TrendingUp, Shuffle, Share2, Mail, BarChart3, Loader, CornerDownRight, Flag } from 'lucide-react';
+import { Clock, Lock, ThumbsUp, Send, Calendar, User, Moon, Sun, Search, TrendingUp, Mail, BarChart3, Loader } from 'lucide-react';
 
 const SUPABASE_URL = 'https://fsvclgyfoguitgmcjwpa.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZzdmNsZ3lmb2d1aXRnbWNqd3BhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTkzODU0NjUsImV4cCI6MjA3NDk2MTQ2NX0.0-TnALwFekmJY-mNzog-iP0JVKhzb8iFRLXZOVycV1s';
