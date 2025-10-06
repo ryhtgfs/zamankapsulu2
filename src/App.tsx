@@ -20,7 +20,7 @@ interface Post {
 const supabase = {
   from: (table: string) => ({
     select: async (columns = '*') => {
-      const response = await fetch(`${SUPABASE_URL}/rest/v1/${table}?select=${columns}&order=post_date.desc,post_time.desc`, {
+      const response = await fetch(`${SUPABASE_URL}/rest/v1/${table}?select=${columns}&order=post_date.asc,post_time.asc`, {
         headers: {
           'apikey': SUPABASE_ANON_KEY,
           'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
@@ -73,6 +73,7 @@ function App() {
   const [showStats, setShowStats] = useState(false);
   const [showLockedDetails, setShowLockedDetails] = useState<{[key: string]: boolean}>({});
   const [upvotedPosts, setUpvotedPosts] = useState<Set<string>>(new Set());
+  const [hasScrolled, setHasScrolled] = useState(false);
   const todayRef = useRef<HTMLDivElement>(null);
   
   const [newPost, setNewPost] = useState({
@@ -101,20 +102,14 @@ function App() {
   };
 
   const getCountdown = (date: string, time: string) => {
-    console.log('getCountdown called with:', { date, time });
-    
     if (!date || !time) {
-      console.log('Date or time is empty');
       return 'Tarih belirtilmemiş';
     }
     
     const now = new Date();
     const unlockDateTime = new Date(`${date}T${time}`);
     
-    console.log('Calculated dates:', { now, unlockDateTime });
-    
     if (isNaN(unlockDateTime.getTime())) {
-      console.log('Invalid date format');
       return 'Geçersiz tarih';
     }
     
@@ -136,21 +131,10 @@ function App() {
       setLoading(true);
       const { data } = await supabase.from('posts').select('*');
       
-      console.log('Fetched posts:', data);
-      
       const formattedPosts = (data || []).map((post: any) => {
-        console.log('Processing post:', {
-          id: post.id,
-          unlock_date: post.unlock_date,
-          unlock_time: post.unlock_time,
-          original_date: post.original_date
-        });
-        
         const shouldBeLocked = post.unlock_date && post.unlock_time 
           ? !isTimeToUnlock(post.unlock_date, post.unlock_time)
           : false;
-        
-        console.log('Should be locked:', shouldBeLocked);
         
         return {
           ...post,
@@ -178,6 +162,11 @@ function App() {
       }
     }
     
+    const scrolled = localStorage.getItem('hasScrolledToToday');
+    if (scrolled) {
+      setHasScrolled(true);
+    }
+    
     const timeTimer = setInterval(() => {
       setCurrentTime(new Date());
     }, 1000);
@@ -193,12 +182,14 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (!loading && todayRef.current) {
+    if (!loading && todayRef.current && !hasScrolled) {
       setTimeout(() => {
         todayRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setHasScrolled(true);
+        localStorage.setItem('hasScrolledToToday', 'true');
       }, 500);
     }
-  }, [loading]);
+  }, [loading, hasScrolled]);
 
   let displayPosts = [...posts];
 
@@ -228,7 +219,7 @@ function App() {
     return acc;
   }, {});
 
-  const sortedDates = Object.keys(groupedPosts).sort().reverse();const topPost = displayPosts.filter(p => !p.is_locked).sort((a, b) => b.upvotes - a.upvotes)[0];
+  const sortedDates = Object.keys(groupedPosts).sort();const topPost = displayPosts.filter(p => !p.is_locked).sort((a, b) => b.upvotes - a.upvotes)[0];
   const todayDate = new Date().toISOString().split('T')[0];
   
   const stats = {
@@ -265,6 +256,11 @@ function App() {
       return;
     }
     
+    if (newPost.postType === 'future' && (!newPost.futureDate || !newPost.futureTime)) {
+      alert('Lütfen gelecek tarih ve saat belirtin!');
+      return;
+    }
+    
     const now = new Date();
     const isLocked = newPost.postType === 'future';
     
@@ -276,16 +272,16 @@ function App() {
       unlock_date: isLocked ? newPost.futureDate : null,
       unlock_time: isLocked ? newPost.futureTime : null,
       original_date: isLocked ? now.toISOString().split('T')[0] : null,
-      author_name: newPost.isAnonymous ? 'Anonim' : newPost.author || 'Anonim',
+      author_name: newPost.isAnonymous ? 'Anonim' : (newPost.author || 'Anonim'),
       is_anonymous: newPost.isAnonymous,
       email: newPost.email || null,
       upvotes: 0
     };
 
-    console.log('Submitting post:', postData);
-
     try {
-      await supabase.from('posts').insert([postData]);
+      const result = await supabase.from('posts').insert([postData]);
+      console.log('Insert result:', result);
+      
       await fetchPosts();
       setNewPost({
         content: '',
@@ -301,6 +297,12 @@ function App() {
     } catch (err) {
       console.error('Error submitting post:', err);
       alert('Mesaj gönderilemedi. Lütfen tekrar deneyin.');
+    }
+  };
+
+  const scrollToToday = () => {
+    if (todayRef.current) {
+      todayRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
   };
 
@@ -365,6 +367,18 @@ function App() {
             </div>
             
             <div className="flex gap-3 items-center">
+              <button 
+                onClick={scrollToToday}
+                className={`p-3 rounded-xl transition-all duration-300 hover:scale-110 ${
+                  darkMode 
+                    ? 'bg-purple-500/10 hover:bg-purple-500/20 text-purple-300' 
+                    : 'bg-purple-100 hover:bg-purple-200 text-purple-600'
+                }`}
+                title="Bugüne git"
+              >
+                <Calendar className="w-5 h-5" />
+              </button>
+              
               <button 
                 onClick={() => setShowStats(!showStats)} 
                 className={`p-3 rounded-xl transition-all duration-300 hover:scale-110 ${
