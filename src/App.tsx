@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Clock, Lock, ThumbsUp, Send, Calendar, User, Moon, Sun, Search, TrendingUp, Mail, BarChart3, Loader, Sparkles, Heart, Star } from 'lucide-react';
 
 const SUPABASE_URL = 'https://fsvclgyfoguitgmcjwpa.supabase.co';
@@ -72,6 +72,8 @@ function App() {
   const [sortMode, setSortMode] = useState('date');
   const [showStats, setShowStats] = useState(false);
   const [showLockedDetails, setShowLockedDetails] = useState<{[key: string]: boolean}>({});
+  const [upvotedPosts, setUpvotedPosts] = useState<Set<string>>(new Set());
+  const todayRef = useRef<HTMLDivElement>(null);
   
   const [newPost, setNewPost] = useState({
     content: '',
@@ -90,15 +92,32 @@ function App() {
     subtitle: 'Anılarını sakla, geleceğe mesaj bırak'
   };
 
-  const isTimeToUnlock = (date: string, time: string) => {
+  const isTimeToUnlock = (unlockDate: string, unlockTime: string) => {
+    if (!unlockDate || !unlockTime) return true;
+    
     const now = new Date();
-    const unlockDateTime = new Date(`${date}T${time}:00`);
-    return now >= unlockDateTime;
+    const unlock = new Date(`${unlockDate}T${unlockTime}`);
+    return now >= unlock;
   };
 
   const getCountdown = (date: string, time: string) => {
+    console.log('getCountdown called with:', { date, time });
+    
+    if (!date || !time) {
+      console.log('Date or time is empty');
+      return 'Tarih belirtilmemiş';
+    }
+    
     const now = new Date();
-    const unlockDateTime = new Date(`${date}T${time}:00`);
+    const unlockDateTime = new Date(`${date}T${time}`);
+    
+    console.log('Calculated dates:', { now, unlockDateTime });
+    
+    if (isNaN(unlockDateTime.getTime())) {
+      console.log('Invalid date format');
+      return 'Geçersiz tarih';
+    }
+    
     const diff = unlockDateTime.getTime() - now.getTime();
     
     if (diff <= 0) return 'Açılıyor...';
@@ -116,13 +135,32 @@ function App() {
     try {
       setLoading(true);
       const { data } = await supabase.from('posts').select('*');
-      const formattedPosts = (data || []).map((post: any) => ({
-        ...post,
-        isLocked: post.is_locked && !isTimeToUnlock(post.unlock_date || post.post_date, post.unlock_time || post.post_time)
-      }));
+      
+      console.log('Fetched posts:', data);
+      
+      const formattedPosts = (data || []).map((post: any) => {
+        console.log('Processing post:', {
+          id: post.id,
+          unlock_date: post.unlock_date,
+          unlock_time: post.unlock_time,
+          original_date: post.original_date
+        });
+        
+        const shouldBeLocked = post.unlock_date && post.unlock_time 
+          ? !isTimeToUnlock(post.unlock_date, post.unlock_time)
+          : false;
+        
+        console.log('Should be locked:', shouldBeLocked);
+        
+        return {
+          ...post,
+          is_locked: shouldBeLocked
+        };
+      });
+      
       setPosts(formattedPosts);
     } catch (err) {
-      console.error(err);
+      console.error('Error fetching posts:', err);
     } finally {
       setLoading(false);
     }
@@ -130,9 +168,37 @@ function App() {
 
   useEffect(() => {
     fetchPosts();
-    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
-    return () => clearInterval(timer);
+    
+    const saved = localStorage.getItem('upvotedPosts');
+    if (saved) {
+      try {
+        setUpvotedPosts(new Set(JSON.parse(saved)));
+      } catch (e) {
+        console.error('Error loading upvoted posts:', e);
+      }
+    }
+    
+    const timeTimer = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000);
+    
+    const unlockTimer = setInterval(() => {
+      fetchPosts();
+    }, 60000);
+    
+    return () => {
+      clearInterval(timeTimer);
+      clearInterval(unlockTimer);
+    };
   }, []);
+
+  useEffect(() => {
+    if (!loading && todayRef.current) {
+      setTimeout(() => {
+        todayRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 500);
+    }
+  }, [loading]);
 
   let displayPosts = [...posts];
 
@@ -154,15 +220,16 @@ function App() {
   }
 
   const groupedPosts = displayPosts.reduce((acc: any, post) => {
-    if (!acc[post.post_date]) {
-      acc[post.post_date] = { locked: [], unlocked: [] };
+    const dateKey = post.is_locked && post.unlock_date ? post.unlock_date : post.post_date;
+    if (!acc[dateKey]) {
+      acc[dateKey] = { locked: [], unlocked: [] };
     }
-    post.is_locked ? acc[post.post_date].locked.push(post) : acc[post.post_date].unlocked.push(post);
+    post.is_locked ? acc[dateKey].locked.push(post) : acc[dateKey].unlocked.push(post);
     return acc;
   }, {});
 
-  const sortedDates = Object.keys(groupedPosts).sort();
-  const topPost = displayPosts.filter(p => !p.is_locked).sort((a, b) => b.upvotes - a.upvotes)[0];
+  const sortedDates = Object.keys(groupedPosts).sort().reverse();const topPost = displayPosts.filter(p => !p.is_locked).sort((a, b) => b.upvotes - a.upvotes)[0];
+  const todayDate = new Date().toISOString().split('T')[0];
   
   const stats = {
     total: posts.length,
@@ -171,14 +238,25 @@ function App() {
   };
 
   const handleUpvote = async (postId: string) => {
-    setPosts(posts.map(post => 
-      post.id === postId ? { ...post, upvotes: post.upvotes + 1 } : post
-    ));
+    if (upvotedPosts.has(postId)) {
+      alert('Bu mesajı zaten beğendiniz!');
+      return;
+    }
     
     const post = posts.find(p => p.id === postId);
-    if (post) {
-      await supabase.from('posts').update({ upvotes: post.upvotes + 1 }).eq('id', postId);
-    }
+    if (!post) return;
+    
+    const newUpvoted = new Set(upvotedPosts);
+    newUpvoted.add(postId);
+    setUpvotedPosts(newUpvoted);
+    localStorage.setItem('upvotedPosts', JSON.stringify([...newUpvoted]));
+    
+    const newUpvoteCount = post.upvotes + 1;
+    setPosts(posts.map(p => 
+      p.id === postId ? { ...p, upvotes: newUpvoteCount } : p
+    ));
+    
+    await supabase.from('posts').update({ upvotes: newUpvoteCount }).eq('id', postId);
   };
 
   const handleSubmit = async () => {
@@ -188,23 +266,23 @@ function App() {
     }
     
     const now = new Date();
-    const postDate = newPost.postType === 'now' ? now.toISOString().split('T')[0] : newPost.futureDate;
-    const postTime = newPost.postType === 'now' ? `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}` : newPost.futureTime;
     const isLocked = newPost.postType === 'future';
     
     const postData = {
       content: newPost.content,
-      post_date: postDate,
-      post_time: postTime,
+      post_date: isLocked ? newPost.futureDate : now.toISOString().split('T')[0],
+      post_time: isLocked ? newPost.futureTime : `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`,
       is_locked: isLocked,
-      unlock_date: isLocked ? postDate : null,
-      unlock_time: isLocked ? postTime : null,
+      unlock_date: isLocked ? newPost.futureDate : null,
+      unlock_time: isLocked ? newPost.futureTime : null,
       original_date: isLocked ? now.toISOString().split('T')[0] : null,
       author_name: newPost.isAnonymous ? 'Anonim' : newPost.author || 'Anonim',
       is_anonymous: newPost.isAnonymous,
       email: newPost.email || null,
       upvotes: 0
     };
+
+    console.log('Submitting post:', postData);
 
     try {
       await supabase.from('posts').insert([postData]);
@@ -221,6 +299,7 @@ function App() {
       setActiveView('timeline');
       alert('Mesaj başarıyla gönderildi!');
     } catch (err) {
+      console.error('Error submitting post:', err);
       alert('Mesaj gönderilemedi. Lütfen tekrar deneyin.');
     }
   };
@@ -249,14 +328,12 @@ function App() {
         ? 'bg-gradient-to-br from-slate-950 via-purple-950 to-slate-900' 
         : 'bg-gradient-to-br from-orange-50 via-pink-50 to-purple-50'
     }`}>
-      {/* Animated Background Elements */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-20 left-10 w-72 h-72 bg-purple-500/10 rounded-full blur-3xl animate-pulse"></div>
-        <div className="absolute bottom-20 right-10 w-96 h-96 bg-pink-500/10 rounded-full blur-3xl animate-pulse delay-1000"></div>
-        <div className="absolute top-1/2 left-1/2 w-64 h-64 bg-blue-500/10 rounded-full blur-3xl animate-pulse delay-500"></div>
+        <div className="absolute bottom-20 right-10 w-96 h-96 bg-pink-500/10 rounded-full blur-3xl animate-pulse"></div>
+        <div className="absolute top-1/2 left-1/2 w-64 h-64 bg-blue-500/10 rounded-full blur-3xl animate-pulse"></div>
       </div>
 
-      {/* Header */}
       <header className={`sticky top-0 z-50 backdrop-blur-xl border-b transition-all duration-300 ${
         darkMode 
           ? 'bg-black/40 border-purple-500/20' 
@@ -360,13 +437,10 @@ function App() {
             </div>
           </div>
         </div>
-      </header>
-
-      {/* Stats Modal */}
-      {showStats && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-fade-in" onClick={() => setShowStats(false)}>
+      </header>{showStats && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-50 flex items-center justify-center p-4" onClick={() => setShowStats(false)}>
           <div 
-            className={`rounded-3xl p-8 max-w-md w-full transform transition-all duration-300 scale-100 ${
+            className={`rounded-3xl p-8 max-w-md w-full transform transition-all duration-300 ${
               darkMode 
                 ? 'bg-gradient-to-br from-slate-900 to-purple-900 border border-purple-500/30' 
                 : 'bg-white border border-purple-300 shadow-2xl'
@@ -381,9 +455,7 @@ function App() {
             </div>
             
             <div className="space-y-4">
-              <div className={`p-4 rounded-xl ${
-                darkMode ? 'bg-purple-500/10' : 'bg-purple-50'
-              }`}>
+              <div className={`p-4 rounded-xl ${darkMode ? 'bg-purple-500/10' : 'bg-purple-50'}`}>
                 <div className="flex justify-between items-center">
                   <span className={`font-medium ${darkMode ? 'text-purple-200' : 'text-purple-800'}`}>
                     Toplam Mesaj
@@ -394,9 +466,7 @@ function App() {
                 </div>
               </div>
               
-              <div className={`p-4 rounded-xl ${
-                darkMode ? 'bg-pink-500/10' : 'bg-pink-50'
-              }`}>
+              <div className={`p-4 rounded-xl ${darkMode ? 'bg-pink-500/10' : 'bg-pink-50'}`}>
                 <div className="flex justify-between items-center">
                   <span className={`font-medium ${darkMode ? 'text-pink-200' : 'text-pink-800'}`}>
                     Kilitli Mesajlar
@@ -407,9 +477,7 @@ function App() {
                 </div>
               </div>
               
-              <div className={`p-4 rounded-xl ${
-                darkMode ? 'bg-blue-500/10' : 'bg-blue-50'
-              }`}>
+              <div className={`p-4 rounded-xl ${darkMode ? 'bg-blue-500/10' : 'bg-blue-50'}`}>
                 <div className="flex justify-between items-center">
                   <span className={`font-medium ${darkMode ? 'text-blue-200' : 'text-blue-800'}`}>
                     Toplam Beğeni
@@ -427,13 +495,12 @@ function App() {
       <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-12 relative z-10">
         {activeView === 'timeline' ? (
           <div className="space-y-12">
-            {/* Hero Section */}
             <div className="text-center py-16 space-y-8">
               <h2 className={`text-6xl font-bold bg-gradient-to-r ${
                 darkMode 
                   ? 'from-purple-400 via-pink-400 to-purple-400' 
                   : 'from-purple-600 via-pink-600 to-purple-600'
-              } bg-clip-text text-transparent animate-fade-in`}>
+              } bg-clip-text text-transparent`}>
                 {siteInfo.tagline}
               </h2>
               <p className={`text-2xl font-medium ${
@@ -471,7 +538,6 @@ function App() {
               )}
             </div>
 
-            {/* Filters */}
             <div className="flex items-center gap-4 justify-center flex-wrap">
               <div className={`flex items-center gap-3 rounded-2xl px-6 py-3 transition-all duration-300 ${
                 darkMode 
@@ -522,7 +588,6 @@ function App() {
               </select>
             </div>
 
-            {/* Timeline */}
             <div className="relative">
               <div className={`absolute left-1/2 transform -translate-x-1/2 w-1 h-full bg-gradient-to-b ${
                 darkMode 
@@ -531,7 +596,11 @@ function App() {
               } rounded-full`}></div>
 
               {sortedDates.map((date, dateIdx) => (
-                <div key={date} className="mb-16 relative animate-fade-in" style={{animationDelay: `${dateIdx * 100}ms`}}>
+                <div 
+                  key={date} 
+                  ref={date === todayDate ? todayRef : null}
+                  className="mb-16 relative" 
+                >
                   <div className="flex justify-center mb-8">
                     <div className={`px-8 py-3 rounded-full font-bold text-lg shadow-xl z-10 relative backdrop-blur-sm ${
                       darkMode 
@@ -577,7 +646,7 @@ function App() {
                                     <span className={`text-sm font-medium ${
                                       darkMode ? 'text-purple-400' : 'text-purple-600'
                                     }`}>
-                                      Açılma: {post.post_time}
+                                      Açılma: {post.unlock_time}
                                     </span>
                                     <span className={`text-sm ${
                                       darkMode ? 'text-gray-400' : 'text-gray-600'
@@ -585,12 +654,19 @@ function App() {
                                       {post.author_name}
                                     </span>
                                   </div>
+                                  {post.original_date && (
+                                    <div className={`text-xs mb-2 ${
+                                      darkMode ? 'text-gray-400' : 'text-gray-600'
+                                    }`}>
+                                      {formatDateShort(post.original_date)} tarihinde bırakıldı
+                                    </div>
+                                  )}
                                   <div className={`rounded-lg px-3 py-2 text-sm font-medium ${
                                     darkMode 
                                       ? 'bg-purple-900/30 text-purple-300' 
                                       : 'bg-purple-200 text-purple-700'
                                   }`}>
-                                    ⏰ {getCountdown(post.unlock_date || post.post_date, post.unlock_time || post.post_time)}
+                                    {getCountdown(post.unlock_date || '', post.unlock_time || '')}
                                   </div>
                                 </div>
                               ))}
@@ -598,9 +674,7 @@ function App() {
                           )}
                         </div>
                       </div>
-                    )}
-
-                    {groupedPosts[date].unlocked.map((post: Post, idx: number) => (
+                    )}{groupedPosts[date].unlocked.map((post: Post, idx: number) => (
                       <div 
                         key={post.id} 
                         className={`relative ${idx % 2 === 0 ? 'ml-auto mr-8' : 'mr-auto ml-8'} w-[calc(50%-2rem)]`}
@@ -614,7 +688,7 @@ function App() {
                             <span className={`text-sm font-semibold ${
                               darkMode ? 'text-emerald-400' : 'text-emerald-700'
                             }`}>
-                              🕐 {post.post_time}
+                              {post.post_time}
                             </span>
                           </div>
                           
@@ -630,7 +704,7 @@ function App() {
                                 ? 'bg-purple-900/30 text-purple-300' 
                                 : 'bg-purple-200 text-purple-700'
                             }`}>
-                              📅 {formatDateShort(post.original_date)} tarihinde bırakıldı
+                              {formatDateShort(post.original_date)} tarihinde bırakıldı
                             </div>
                           )}
 
@@ -648,7 +722,12 @@ function App() {
                             
                             <button 
                               onClick={() => handleUpvote(post.id)}
-                              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-semibold transition-all duration-300 hover:scale-110 ${
+                              disabled={upvotedPosts.has(post.id)}
+                              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-semibold transition-all duration-300 ${
+                                upvotedPosts.has(post.id)
+                                  ? 'opacity-50 cursor-not-allowed'
+                                  : 'hover:scale-110'
+                              } ${
                                 darkMode 
                                   ? 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300' 
                                   : 'bg-emerald-200 hover:bg-emerald-300 text-emerald-700'
@@ -758,7 +837,7 @@ function App() {
                       <span className={`font-medium ${
                         darkMode ? 'text-white' : 'text-gray-900'
                       }`}>
-                        🚀 Hemen yayınla
+                        Hemen yayınla
                       </span>
                     </label>
                     
@@ -780,12 +859,12 @@ function App() {
                       <span className={`font-medium ${
                         darkMode ? 'text-white' : 'text-gray-900'
                       }`}>
-                        ⏰ Gelecekte yayınla
+                        Gelecekte yayınla
                       </span>
                     </label>
                     
                     {newPost.postType === 'future' && (
-                      <div className="ml-6 space-y-4 animate-fade-in">
+                      <div className="ml-6 space-y-4">
                         <input
                           type="date"
                           value={newPost.futureDate}
@@ -833,7 +912,7 @@ function App() {
                   disabled={loading}
                   className="w-full bg-gradient-to-r from-purple-600 via-pink-600 to-purple-600 text-white font-bold py-5 rounded-2xl hover:from-purple-700 hover:via-pink-700 hover:to-purple-700 transition-all duration-300 shadow-2xl shadow-purple-500/50 disabled:opacity-50 disabled:cursor-not-allowed text-lg hover:scale-105 transform"
                 >
-                  {loading ? 'Gönderiliyor...' : '✨ Gönder'}
+                  {loading ? 'Gönderiliyor...' : 'Gönder'}
                 </button>
               </div>
             </div>
@@ -841,7 +920,6 @@ function App() {
         )}
       </main>
 
-      {/* Footer */}
       <footer className={`backdrop-blur-xl border-t mt-20 py-12 transition-all duration-300 ${
         darkMode 
           ? 'bg-black/40 border-purple-500/20' 
