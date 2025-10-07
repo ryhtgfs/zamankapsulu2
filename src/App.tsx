@@ -59,11 +59,12 @@ const supabase = {
             'apikey': SUPABASE_ANON_KEY,
             'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
             'Content-Type': 'application/json',
-            'Prefer': 'return=minimal'
+            'Prefer': 'return=representation'
           },
           body: JSON.stringify(values)
         });
-        return { data: null, error: response.ok ? null : 'Error' };
+        const data = await response.json();
+        return { data, error: response.ok ? null : 'Error' };
       }
     })
   })
@@ -84,6 +85,7 @@ function App() {
   const [hasScrolled, setHasScrolled] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [visibleDate, setVisibleDate] = useState('');
+  const [previousDate, setPreviousDate] = useState('');
   const [alertModal, setAlertModal] = useState<AlertModal>({ show: false, type: 'success', message: '' });
   const todayRef = useRef<HTMLDivElement>(null);
   const dateRefs = useRef<{[key: string]: HTMLDivElement | null}>({});
@@ -208,7 +210,9 @@ function App() {
         localStorage.setItem('hasScrolledToToday', 'true');
       }, 500);
     }
-  }, [loading, hasScrolled]);useEffect(() => {
+  }, [loading, hasScrolled]);
+
+  useEffect(() => {
     const handleScroll = () => {
       const dateElements = Object.entries(dateRefs.current);
       
@@ -216,7 +220,10 @@ function App() {
         if (element) {
           const rect = element.getBoundingClientRect();
           if (rect.top <= 200 && rect.bottom >= 200) {
-            setVisibleDate(date);
+            if (visibleDate !== date) {
+              setPreviousDate(visibleDate);
+              setVisibleDate(date);
+            }
             break;
           }
         }
@@ -225,7 +232,7 @@ function App() {
 
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
-  }, [posts]);
+  }, [posts, visibleDate]);
 
   let displayPosts = [...posts];
 
@@ -270,25 +277,31 @@ function App() {
       return;
     }
     
-    const post = posts.find(p => p.id === postId);
-    if (!post) return;
-    
-    const newUpvoteCount = post.upvotes + 1;
-    
-    const newUpvoted = new Set(upvotedPosts);
-    newUpvoted.add(postId);
-    setUpvotedPosts(newUpvoted);
-    localStorage.setItem('upvotedPosts', JSON.stringify([...newUpvoted]));
-    
-    setPosts(posts.map(p => 
-      p.id === postId ? { ...p, upvotes: newUpvoteCount } : p
-    ));
-    
     try {
-      await supabase.from('posts').update({ upvotes: newUpvoteCount }).eq('id', postId);
+      const post = posts.find(p => p.id === postId);
+      if (!post) return;
+      
+      const newUpvoteCount = post.upvotes + 1;
+      
+      const { data, error } = await supabase.from('posts').update({ upvotes: newUpvoteCount }).eq('id', postId);
+      
+      if (error) {
+        showAlert('error', 'Beğeni kaydedilemedi!');
+        return;
+      }
+      
+      const newUpvoted = new Set(upvotedPosts);
+      newUpvoted.add(postId);
+      setUpvotedPosts(newUpvoted);
+      localStorage.setItem('upvotedPosts', JSON.stringify([...newUpvoted]));
+      
+      setPosts(posts.map(p => 
+        p.id === postId ? { ...p, upvotes: newUpvoteCount } : p
+      ));
+      
     } catch (err) {
       console.error('Error updating upvote:', err);
-      showAlert('error', 'Beğeni kaydedilemedi!');
+      showAlert('error', 'Bir hata oluştu!');
     }
   };
 
@@ -381,7 +394,6 @@ function App() {
         <div className="absolute top-1/2 left-1/2 w-64 h-64 bg-blue-500/10 rounded-full blur-3xl animate-pulse"></div>
       </div>
 
-      {/* Custom Alert Modal */}
       {alertModal.show && (
         <div className="fixed top-4 right-4 z-[100] animate-in slide-in-from-top-2">
           <div className={`rounded-xl p-4 shadow-2xl backdrop-blur-xl border-2 min-w-[300px] max-w-md ${
@@ -435,7 +447,8 @@ function App() {
                   darkMode ? 'text-purple-400' : 'text-purple-600'
                 }`} />
                 <Sparkles className="w-3 h-3 text-yellow-400 absolute -top-1 -right-1 animate-pulse" />
-              </div><div>
+              </div>
+              <div>
                 <h1 className={`text-2xl font-bold bg-gradient-to-r ${
                   darkMode 
                     ? 'from-purple-400 via-pink-400 to-purple-400' 
@@ -538,14 +551,16 @@ function App() {
         </div>
       </header>
 
-      {/* Sticky Floating Date - Z-INDEX ARTIRILDI */}
       {visibleDate && activeView === 'timeline' && (
         <div className="fixed top-[140px] left-1/2 transform -translate-x-1/2 z-[60] pointer-events-none">
-          <div className={`px-5 py-1.5 rounded-full text-sm font-bold shadow-lg backdrop-blur-sm transition-all duration-300 ${
-            darkMode 
-              ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white' 
-              : 'bg-gradient-to-r from-purple-500 to-pink-500 text-white'
-          }`}>
+          <div 
+            key={visibleDate}
+            className={`px-5 py-1.5 rounded-full text-sm font-bold shadow-lg backdrop-blur-sm animate-in fade-in zoom-in duration-300 ${
+              darkMode 
+                ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white' 
+                : 'bg-gradient-to-r from-purple-500 to-pink-500 text-white'
+            }`}
+          >
             {formatDateShort(visibleDate)}
           </div>
         </div>
@@ -604,494 +619,500 @@ function App() {
             </div>
           </div>
         </div>
-      )}
-
-      <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6 relative z-10">
-        <div className={`transition-all duration-500 ${
-          activeView === 'timeline' ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 hidden'
-        }`}>
-          {activeView === 'timeline' && (
-            <div className="space-y-6">
-              <div className="text-center py-8 space-y-4">
-                <h2 className={`text-4xl font-bold bg-gradient-to-r pb-2 ${
-                  darkMode 
-                    ? 'from-purple-400 via-pink-400 to-purple-400' 
-                    : 'from-purple-600 via-pink-600 to-purple-600'
-                } bg-clip-text text-transparent`}>
-                  {siteInfo.tagline}
-                </h2>
-                <p className={`text-lg font-medium ${
-                  darkMode ? 'text-purple-300' : 'text-purple-700'
-                }`}>
-                  {siteInfo.subtitle}
-                </p>
-                
-                {topPost && (
-                  <div className={`rounded-xl p-4 max-w-xl mx-auto transform hover:scale-105 transition-all duration-300 ${
-                    darkMode 
-                      ? 'bg-gradient-to-br from-purple-900/50 to-pink-900/50 border border-purple-500/30' 
-                      : 'bg-gradient-to-br from-purple-100 to-pink-100 border border-purple-300'
-                  } backdrop-blur-sm shadow-lg`}>
-                    <div className="flex items-center gap-2 mb-2">
-                      <Star className={`w-4 h-4 ${darkMode ? 'text-yellow-400' : 'text-yellow-600'} animate-pulse`} />
-                      <span className={`font-bold text-sm ${
-                        darkMode ? 'text-purple-300' : 'text-purple-700'
-                      }`}>
-                        Bugünün Öne Çıkanı
-                      </span>
-                    </div>
-                    <p className={`text-sm italic leading-relaxed ${
-                      darkMode ? 'text-white' : 'text-gray-900'
-                    }`}>
-                      "{topPost.content}"
-                    </p>
-                    <div className={`mt-2 flex items-center gap-1 ${
-                      darkMode ? 'text-purple-400' : 'text-purple-600'
-                    }`}>
-                      <Heart className="w-3 h-3 fill-current" />
-                      <span className="font-semibold text-xs">{topPost.upvotes} beğeni</span>
-                    </div>
-                  </div>
-                )}
-              </div><div className="flex items-center gap-3 justify-center flex-wrap">
-                <div className={`flex items-center gap-2 rounded-xl px-4 py-2 transition-all duration-300 ${
-                  darkMode 
-                    ? 'bg-slate-800/50 border border-purple-500/20' 
-                    : 'bg-white/70 border border-purple-200 shadow-lg'
-                }`}>
-                  <Search className={`w-4 h-4 ${darkMode ? 'text-purple-400' : 'text-purple-600'}`} />
-                  <input
-                    type="text"
-                    placeholder="Mesaj ara..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className={`bg-transparent border-none outline-none w-48 text-sm ${
-                      darkMode ? 'text-white placeholder-gray-400' : 'text-gray-900 placeholder-gray-500'
-                    }`}
-                  />
-                </div>
-                
-                <div className="flex gap-2">
-                  {['all', 'today', 'locked'].map((mode) => (
-                    <button
-                      key={mode}
-                      onClick={() => setFilterMode(mode)}
-                      className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all duration-300 hover:scale-105 ${
-                        filterMode === mode
-                          ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg shadow-purple-500/50'
-                          : darkMode
-                            ? 'bg-slate-800/50 text-purple-300 border border-purple-500/20'
-                            : 'bg-white/70 text-purple-600 border border-purple-200'
-                      }`}
-                    >
-                      {mode === 'all' ? 'Tümü' : mode === 'today' ? 'Bugün' : 'Kilitli'}
-                    </button>
-                  ))}
-                </div>
-
-                <select 
-                  value={sortMode} 
-                  onChange={(e) => setSortMode(e.target.value)}
-                  className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all duration-300 hover:scale-105 cursor-pointer ${
-                    darkMode 
-                      ? 'bg-slate-800/50 text-purple-300 border border-purple-500/20' 
-                      : 'bg-white/70 text-purple-600 border border-purple-200'
-                  }`}
-                >
-                  <option value="date">Tarihe Göre</option>
-                  <option value="popular">Popülerliğe Göre</option>
-                </select>
-              </div>
-
-              <div className="relative">
-                <div className={`absolute left-1/2 transform -translate-x-1/2 w-1 h-full bg-gradient-to-b ${
-                  darkMode 
-                    ? 'from-purple-500 via-pink-500 to-transparent' 
-                    : 'from-purple-400 via-pink-400 to-transparent'
-                } rounded-full`}></div>
-
-                {sortedDates.map((date, dateIdx) => (
-                  <div 
-                    key={date} 
-                    ref={(el) => {
-                      dateRefs.current[date] = el;
-                      if (date === todayDate) {
-                        todayRef.current = el;
-                      }
-                    }}
-                    className="mb-8 relative" 
-                  >
-                    <div className="flex justify-center mb-4">
-                      <div className={`px-5 py-1.5 rounded-full text-sm font-bold shadow-lg z-10 relative backdrop-blur-sm ${
-                        darkMode 
-                          ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white' 
-                          : 'bg-gradient-to-r from-purple-500 to-pink-500 text-white'
-                      }`}>
-                        {formatDateShort(date)}
-                      </div>
-                    </div>
-
-                    <div className="space-y-3">
-                      {groupedPosts[date].locked.length > 0 && (
-                        <div className="relative ml-auto mr-8 w-[calc(50%-2rem)]">
-                          <div 
-                            className={`rounded-lg p-3 cursor-pointer transition-all duration-300 hover:scale-105 ${
-                              darkMode 
-                                ? 'bg-gradient-to-br from-gray-800/70 to-gray-900/70 border border-gray-600/30' 
-                                : 'bg-gradient-to-br from-gray-100 to-gray-200 border border-gray-300'
-                            } backdrop-blur-sm shadow-md`}
-                            onClick={() => setShowLockedDetails({...showLockedDetails, [date]: !showLockedDetails[date]})}
-                          >
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-2">
-                                <Lock className={`w-4 h-4 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`} />
-                                <span className={`font-semibold text-sm ${
-                                  darkMode ? 'text-gray-300' : 'text-gray-700'
-                                }`}>
-                                  {groupedPosts[date].locked.length} Kilitli Mesaj
-                                </span>
-                              </div>
-                              <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                                {showLockedDetails[date] ? '▼' : '▶'}
-                              </span>
-                            </div>
-                            
-                            {showLockedDetails[date] && (
-                              <div className="mt-2 space-y-2 border-t border-gray-500/30 pt-2">
-                                {groupedPosts[date].locked.map((post: Post) => (
-                                  <div key={post.id} className={`rounded p-2 ${
-                                    darkMode ? 'bg-slate-800/50' : 'bg-white/50'
-                                  }`}>
-                                    <div className="flex items-center justify-between mb-1">
-                                      <span className={`text-xs font-medium ${
-                                        darkMode ? 'text-purple-400' : 'text-purple-600'
-                                      }`}>
-                                        {post.unlock_time}
-                                      </span>
-                                      <span className={`text-xs ${
-                                        darkMode ? 'text-gray-400' : 'text-gray-600'
-                                      }`}>
-                                        {post.author_name}
-                                      </span>
-                                    </div>
-                                    {post.original_date && (
-                                      <div className={`text-xs mb-1 ${
-                                        darkMode ? 'text-gray-400' : 'text-gray-600'
-                                      }`}>
-                                        {formatDateShort(post.original_date)} tarihinde bırakıldı
-                                      </div>
-                                    )}
-                                    <div className={`rounded px-2 py-0.5 text-xs font-medium ${
-                                      darkMode 
-                                        ? 'bg-purple-900/30 text-purple-300' 
-                                        : 'bg-purple-200 text-purple-700'
-                                    }`}>
-                                      {getCountdown(post.unlock_date || '', post.unlock_time || '')}
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )}
-
-                      {groupedPosts[date].unlocked.map((post: Post, idx: number) => (
-                        <div 
-                          key={post.id} 
-                          className={`relative ${idx % 2 === 0 ? 'ml-auto mr-8' : 'mr-auto ml-8'} w-[calc(50%-2rem)]`}
-                        >
-                          <div className={`rounded-lg p-3 transition-all duration-300 hover:scale-105 shadow-md ${
-                            darkMode 
-                              ? 'bg-gradient-to-br from-emerald-900/40 to-teal-900/40 border border-emerald-500/30' 
-                              : 'bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-300'
-                          } backdrop-blur-sm`}>
-                            <div className="flex items-center justify-between mb-1.5">
-                              <span className={`text-xs font-semibold ${
-                                darkMode ? 'text-emerald-400' : 'text-emerald-700'
-                              }`}>
-                                {post.post_time}
-                              </span>
-                            </div>
-                            
-                            <p className={`text-sm leading-snug mb-2 ${
-                              darkMode ? 'text-white' : 'text-gray-900'
-                            }`}>
-                              "{post.content}"
-                            </p>
-
-                            {post.original_date && (
-                              <div className={`rounded px-2 py-0.5 mb-1.5 text-xs font-medium inline-block ${
-                                darkMode 
-                                  ? 'bg-purple-900/30 text-purple-300' 
-                                  : 'bg-purple-200 text-purple-700'
-                              }`}>
-                                {formatDateShort(post.original_date)} tarihinde bırakıldı
-                              </div>
-                            )}
-
-                            <div className="flex items-center justify-between text-xs pt-1.5 border-t border-white/10">
-                              <div className="flex items-center gap-1">
-                                <User className={`w-3 h-3 ${
-                                  darkMode ? 'text-emerald-400' : 'text-emerald-600'
-                                }`} />
-                                <span className={`font-medium ${
-                                  darkMode ? 'text-emerald-300' : 'text-emerald-700'
-                                }`}>
-                                  {post.author_name}
-                                </span>
-                              </div>
-                              
-                              <button 
-                                onClick={() => handleUpvote(post.id)}
-                                disabled={upvotedPosts.has(post.id)}
-                                className={`flex items-center gap-1 px-2 py-1 rounded font-semibold transition-all duration-300 ${
-                                  upvotedPosts.has(post.id)
-                                    ? 'opacity-50 cursor-not-allowed'
-                                    : 'hover:scale-110'
-                                } ${
-                                  darkMode 
-                                    ? 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300' 
-                                    : 'bg-emerald-200 hover:bg-emerald-300 text-emerald-700'
-                                }`}
-                              >
-                                <ThumbsUp className="w-3 h-3" />
-                                <span>{post.upvotes}</span>
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div className={`transition-all duration-500 ${
-          activeView === 'post' ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 hidden'
-        }`}>
-          {activeView === 'post' && (
-            <div className="max-w-2xl mx-auto">
-              <div className={`rounded-2xl p-8 shadow-2xl backdrop-blur-sm transition-all duration-300 ${
+      )}<main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6 relative z-10">
+      <div className={`transition-all duration-500 ${
+        activeView === 'timeline' 
+          ? 'opacity-100 translate-x-0' 
+          : activeView === 'post' 
+            ? 'opacity-0 -translate-x-full absolute inset-0' 
+            : 'opacity-0 translate-x-full absolute inset-0'
+      }`}>
+        {activeView === 'timeline' && (
+          <div className="space-y-6">
+            <div className="text-center py-8 space-y-4">
+              <h2 className={`text-4xl font-bold bg-gradient-to-r pb-2 ${
                 darkMode 
-                  ? 'bg-gradient-to-br from-purple-900/50 to-slate-900/50 border border-purple-500/30' 
-                  : 'bg-gradient-to-br from-purple-50 to-pink-50 border border-purple-300'
+                  ? 'from-purple-400 via-pink-400 to-purple-400' 
+                  : 'from-purple-600 via-pink-600 to-purple-600'
+              } bg-clip-text text-transparent`}>
+                {siteInfo.tagline}
+              </h2>
+              <p className={`text-lg font-medium ${
+                darkMode ? 'text-purple-300' : 'text-purple-700'
               }`}>
-                <h2 className={`text-3xl font-bold mb-6 flex items-center gap-3 ${
-                  darkMode ? 'text-white' : 'text-gray-900'
-                }`}>
-                  <Send className={`w-8 h-8 ${
-                    darkMode ? 'text-purple-400' : 'text-purple-600'
-                  }`} />
-                  Mesaj Bırak
-                </h2>
-
-                <div className="space-y-5">
-                  <div>
-                    <label className={`block mb-2 font-semibold ${
+                {siteInfo.subtitle}
+              </p>
+              
+              {topPost && (
+                <div className={`rounded-xl p-4 max-w-xl mx-auto transform hover:scale-105 transition-all duration-300 ${
+                  darkMode 
+                    ? 'bg-gradient-to-br from-purple-900/50 to-pink-900/50 border border-purple-500/30' 
+                    : 'bg-gradient-to-br from-purple-100 to-pink-100 border border-purple-300'
+                } backdrop-blur-sm shadow-lg`}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <Star className={`w-4 h-4 ${darkMode ? 'text-yellow-400' : 'text-yellow-600'} animate-pulse`} />
+                    <span className={`font-bold text-sm ${
                       darkMode ? 'text-purple-300' : 'text-purple-700'
                     }`}>
-                      Mesajınız:
-                    </label>
-                    <div className="relative">
-                      <textarea
-                        value={newPost.content}
-                        onChange={(e) => setNewPost({...newPost, content: e.target.value})}
-                        className={`w-full h-32 rounded-xl p-4 resize-none transition-all duration-300 focus:ring-4 ${
-                          darkMode 
-                            ? 'bg-slate-800/50 border-purple-500/30 text-white placeholder-gray-400 focus:ring-purple-500/30' 
-                            : 'bg-white border-purple-300 text-gray-900 placeholder-gray-500 focus:ring-purple-300/50'
-                        } border-2`}
-                        placeholder="Duygularınızı, düşüncelerinizi paylaşın..."
-                      />
-                      <button
-                        onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                        className={`absolute bottom-3 right-3 p-2 rounded-lg transition-all duration-300 hover:scale-110 ${
-                          darkMode 
-                            ? 'bg-purple-500/20 hover:bg-purple-500/30 text-purple-300' 
-                            : 'bg-purple-100 hover:bg-purple-200 text-purple-600'
-                        }`}
-                      >
-                        <Smile className="w-5 h-5" />
-                      </button>
+                      Bugünün Öne Çıkanı
+                    </span>
+                  </div>
+                  <p className={`text-sm italic leading-relaxed ${
+                    darkMode ? 'text-white' : 'text-gray-900'
+                  }`}>
+                    "{topPost.content}"
+                  </p>
+                  <div className={`mt-2 flex items-center gap-1 ${
+                    darkMode ? 'text-purple-400' : 'text-purple-600'
+                  }`}>
+                    <Heart className="w-3 h-3 fill-current" />
+                    <span className="font-semibold text-xs">{topPost.upvotes} beğeni</span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center gap-3 justify-center flex-wrap">
+              <div className={`flex items-center gap-2 rounded-xl px-4 py-2 transition-all duration-300 ${
+                darkMode 
+                  ? 'bg-slate-800/50 border border-purple-500/20' 
+                  : 'bg-white/70 border border-purple-200 shadow-lg'
+              }`}>
+                <Search className={`w-4 h-4 ${darkMode ? 'text-purple-400' : 'text-purple-600'}`} />
+                <input
+                  type="text"
+                  placeholder="Mesaj ara..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className={`bg-transparent border-none outline-none w-48 text-sm ${
+                    darkMode ? 'text-white placeholder-gray-400' : 'text-gray-900 placeholder-gray-500'
+                  }`}
+                />
+              </div>
+              
+              <div className="flex gap-2">
+                {['all', 'today', 'locked'].map((mode) => (
+                  <button
+                    key={mode}
+                    onClick={() => setFilterMode(mode)}
+                    className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all duration-300 hover:scale-105 ${
+                      filterMode === mode
+                        ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg shadow-purple-500/50'
+                        : darkMode
+                          ? 'bg-slate-800/50 text-purple-300 border border-purple-500/20'
+                          : 'bg-white/70 text-purple-600 border border-purple-200'
+                    }`}
+                  >
+                    {mode === 'all' ? 'Tümü' : mode === 'today' ? 'Bugün' : 'Kilitli'}
+                  </button>
+                ))}
+              </div>
+
+              <select 
+                value={sortMode} 
+                onChange={(e) => setSortMode(e.target.value)}
+                className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all duration-300 hover:scale-105 cursor-pointer ${
+                  darkMode 
+                    ? 'bg-slate-800/50 text-purple-300 border border-purple-500/20' 
+                    : 'bg-white/70 text-purple-600 border border-purple-200'
+                }`}
+              >
+                <option value="date">Tarihe Göre</option>
+                <option value="popular">Popülerliğe Göre</option>
+              </select>
+            </div>
+
+            <div className="relative">
+              <div className={`absolute left-1/2 transform -translate-x-1/2 w-1 h-full bg-gradient-to-b ${
+                darkMode 
+                  ? 'from-purple-500 via-pink-500 to-transparent' 
+                  : 'from-purple-400 via-pink-400 to-transparent'
+              } rounded-full`}></div>
+
+              {sortedDates.map((date, dateIdx) => (
+                <div 
+                  key={date} 
+                  ref={(el) => {
+                    dateRefs.current[date] = el;
+                    if (date === todayDate) {
+                      todayRef.current = el;
+                    }
+                  }}
+                  className="mb-8 relative" 
+                >
+                  <div className="flex justify-center mb-4">
+                    <div className={`px-5 py-1.5 rounded-full text-sm font-bold shadow-lg z-10 relative backdrop-blur-sm ${
+                      darkMode 
+                        ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white' 
+                        : 'bg-gradient-to-r from-purple-500 to-pink-500 text-white'
+                    }`}>
+                      {formatDateShort(date)}
                     </div>
-                    
-                    {showEmojiPicker && (
-                      <div className={`mt-2 p-3 rounded-xl border ${
+                  </div>
+
+                  <div className="space-y-3">
+                    {groupedPosts[date].locked.length > 0 && (
+                      <div className="relative ml-auto mr-8 w-[calc(50%-2rem)]">
+                        <div 
+                          className={`rounded-lg p-3 cursor-pointer transition-all duration-300 hover:scale-105 ${
+                            darkMode 
+                              ? 'bg-gradient-to-br from-gray-800/70 to-gray-900/70 border border-gray-600/30' 
+                              : 'bg-gradient-to-br from-gray-100 to-gray-200 border border-gray-300'
+                          } backdrop-blur-sm shadow-md`}
+                          onClick={() => setShowLockedDetails({...showLockedDetails, [date]: !showLockedDetails[date]})}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <Lock className={`w-4 h-4 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`} />
+                              <span className={`font-semibold text-sm ${
+                                darkMode ? 'text-gray-300' : 'text-gray-700'
+                              }`}>
+                                {groupedPosts[date].locked.length} Kilitli Mesaj
+                              </span>
+                            </div>
+                            <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                              {showLockedDetails[date] ? '▼' : '▶'}
+                            </span>
+                          </div>
+                          
+                          {showLockedDetails[date] && (
+                            <div className="mt-2 space-y-2 border-t border-gray-500/30 pt-2">
+                              {groupedPosts[date].locked.map((post: Post) => (
+                                <div key={post.id} className={`rounded p-2 ${
+                                  darkMode ? 'bg-slate-800/50' : 'bg-white/50'
+                                }`}>
+                                  <div className="flex items-center justify-between mb-1">
+                                    <span className={`text-xs font-medium ${
+                                      darkMode ? 'text-purple-400' : 'text-purple-600'
+                                    }`}>
+                                      {post.unlock_time}
+                                    </span>
+                                    <span className={`text-xs ${
+                                      darkMode ? 'text-gray-400' : 'text-gray-600'
+                                    }`}>
+                                      {post.author_name}
+                                    </span>
+                                  </div>
+                                  {post.original_date && (
+                                    <div className={`text-xs mb-1 ${
+                                      darkMode ? 'text-gray-400' : 'text-gray-600'
+                                    }`}>
+                                      {formatDateShort(post.original_date)} tarihinde bırakıldı
+                                    </div>
+                                  )}
+                                  <div className={`rounded px-2 py-0.5 text-xs font-medium ${
+                                    darkMode 
+                                      ? 'bg-purple-900/30 text-purple-300' 
+                                      : 'bg-purple-200 text-purple-700'
+                                  }`}>
+                                    {getCountdown(post.unlock_date || '', post.unlock_time || '')}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {groupedPosts[date].unlocked.map((post: Post, idx: number) => (
+                      <div 
+                        key={post.id} 
+                        className={`relative ${idx % 2 === 0 ? 'ml-auto mr-8' : 'mr-auto ml-8'} w-[calc(50%-2rem)]`}
+                      >
+                        <div className={`rounded-lg p-3 transition-all duration-300 hover:scale-105 shadow-md ${
+                          darkMode 
+                            ? 'bg-gradient-to-br from-emerald-900/40 to-teal-900/40 border border-emerald-500/30' 
+                            : 'bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-300'
+                        } backdrop-blur-sm`}>
+                          <div className="flex items-center justify-between mb-1.5">
+                            <span className={`text-xs font-semibold ${
+                              darkMode ? 'text-emerald-400' : 'text-emerald-700'
+                            }`}>
+                              {post.post_time}
+                            </span>
+                          </div>
+                          
+                          <p className={`text-sm leading-snug mb-2 ${
+                            darkMode ? 'text-white' : 'text-gray-900'
+                          }`}>
+                            "{post.content}"
+                          </p>
+
+                          {post.original_date && (
+                            <div className={`rounded px-2 py-0.5 mb-1.5 text-xs font-medium inline-block ${
+                              darkMode 
+                                ? 'bg-purple-900/30 text-purple-300' 
+                                : 'bg-purple-200 text-purple-700'
+                            }`}>
+                              {formatDateShort(post.original_date)} tarihinde bırakıldı
+                            </div>
+                          )}
+
+                          <div className="flex items-center justify-between text-xs pt-1.5 border-t border-white/10">
+                            <div className="flex items-center gap-1">
+                              <User className={`w-3 h-3 ${
+                                darkMode ? 'text-emerald-400' : 'text-emerald-600'
+                              }`} />
+                              <span className={`font-medium ${
+                                darkMode ? 'text-emerald-300' : 'text-emerald-700'
+                              }`}>
+                                {post.author_name}
+                              </span>
+                            </div>
+                            
+                            <button 
+                              onClick={() => handleUpvote(post.id)}
+                              disabled={upvotedPosts.has(post.id)}
+                              className={`flex items-center gap-1 px-2 py-1 rounded font-semibold transition-all duration-300 ${
+                                upvotedPosts.has(post.id)
+                                  ? 'opacity-50 cursor-not-allowed'
+                                  : 'hover:scale-110'
+                              } ${
+                                darkMode 
+                                  ? 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300' 
+                                  : 'bg-emerald-200 hover:bg-emerald-300 text-emerald-700'
+                              }`}
+                            >
+                              <ThumbsUp className="w-3 h-3" />
+                              <span>{post.upvotes}</span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className={`transition-all duration-500 ${
+        activeView === 'post' 
+          ? 'opacity-100 translate-x-0' 
+          : activeView === 'timeline' 
+            ? 'opacity-0 translate-x-full absolute inset-0' 
+            : 'opacity-0 -translate-x-full absolute inset-0'
+      }`}>
+        {activeView === 'post' && (
+          <div className="max-w-2xl mx-auto">
+            <div className={`rounded-2xl p-8 shadow-2xl backdrop-blur-sm transition-all duration-300 ${
+              darkMode 
+                ? 'bg-gradient-to-br from-purple-900/50 to-slate-900/50 border border-purple-500/30' 
+                : 'bg-gradient-to-br from-purple-50 to-pink-50 border border-purple-300'
+            }`}>
+              <h2 className={`text-3xl font-bold mb-6 flex items-center gap-3 ${
+                darkMode ? 'text-white' : 'text-gray-900'
+              }`}>
+                <Send className={`w-8 h-8 ${
+                  darkMode ? 'text-purple-400' : 'text-purple-600'
+                }`} />
+                Mesaj Bırak
+              </h2>
+
+              <div className="space-y-5">
+                <div>
+                  <label className={`block mb-2 font-semibold ${
+                    darkMode ? 'text-purple-300' : 'text-purple-700'
+                  }`}>
+                    Mesajınız:
+                  </label>
+                  <div className="relative">
+                    <textarea
+                      value={newPost.content}
+                      onChange={(e) => setNewPost({...newPost, content: e.target.value})}
+                      className={`w-full h-32 rounded-xl p-4 resize-none transition-all duration-300 focus:ring-4 ${
                         darkMode 
-                          ? 'bg-slate-800 border-purple-500/30' 
-                          : 'bg-white border-purple-200'
-                      } grid grid-cols-10 gap-2`}>
-                        {EMOJIS.map((emoji) => (
-                          <button
-                            key={emoji}
-                            onClick={() => addEmoji(emoji)}
-                            className={`text-2xl hover:scale-125 transition-transform duration-200 p-1 rounded ${
-                              darkMode ? 'hover:bg-purple-500/20' : 'hover:bg-purple-100'
-                            }`}
-                          >
-                            {emoji}
-                          </button>
-                        ))}
+                          ? 'bg-slate-800/50 border-purple-500/30 text-white placeholder-gray-400 focus:ring-purple-500/30' 
+                          : 'bg-white border-purple-300 text-gray-900 placeholder-gray-500 focus:ring-purple-300/50'
+                      } border-2`}
+                      placeholder="Duygularınızı, düşüncelerinizi paylaşın..."
+                    />
+                    <button
+                      onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                      className={`absolute bottom-3 right-3 p-2 rounded-lg transition-all duration-300 hover:scale-110 ${
+                        darkMode 
+                          ? 'bg-purple-500/20 hover:bg-purple-500/30 text-purple-300' 
+                          : 'bg-purple-100 hover:bg-purple-200 text-purple-600'
+                      }`}
+                    >
+                      <Smile className="w-5 h-5" />
+                    </button>
+                  </div>
+                  
+                  {showEmojiPicker && (
+                    <div className={`mt-2 p-3 rounded-xl border ${
+                      darkMode 
+                        ? 'bg-slate-800 border-purple-500/30' 
+                        : 'bg-white border-purple-200'
+                    } grid grid-cols-10 gap-2`}>
+                      {EMOJIS.map((emoji) => (
+                        <button
+                          key={emoji}
+                          onClick={() => addEmoji(emoji)}
+                          className={`text-2xl hover:scale-125 transition-transform duration-200 p-1 rounded ${
+                            darkMode ? 'hover:bg-purple-500/20' : 'hover:bg-purple-100'
+                          }`}
+                        >
+                          {emoji}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <label className={`block mb-2 font-semibold ${
+                    darkMode ? 'text-purple-300' : 'text-purple-700'
+                  }`}>
+                    Takma Ad:
+                  </label>
+                  <input
+                    type="text"
+                    value={newPost.author}
+                    onChange={(e) => setNewPost({...newPost, author: e.target.value})}
+                    disabled={newPost.isAnonymous}
+                    className={`w-full rounded-xl p-3 transition-all duration-300 focus:ring-4 disabled:opacity-50 ${
+                      darkMode 
+                        ? 'bg-slate-800/50 border-purple-500/30 text-white focus:ring-purple-500/30' 
+                        : 'bg-white border-purple-300 text-gray-900 focus:ring-purple-300/50'
+                    } border-2`}
+                    placeholder="İsteğe bağlı..."
+                  />
+                  <label className={`flex items-center gap-2 mt-2 cursor-pointer ${
+                    darkMode ? 'text-purple-300' : 'text-purple-700'
+                  }`}>
+                    <input
+                      type="checkbox"
+                      checked={newPost.isAnonymous}
+                      onChange={(e) => setNewPost({...newPost, isAnonymous: e.target.checked})}
+                      className="w-4 h-4 rounded"
+                    />
+                    <span className="font-medium text-sm">Anonim olarak paylaş</span>
+                  </label>
+                </div>
+
+                <div>
+                  <label className={`block mb-3 font-semibold flex items-center gap-2 ${
+                    darkMode ? 'text-purple-300' : 'text-purple-700'
+                  }`}>
+                    <Calendar className="w-5 h-5" />
+                    Zaman Ayarı:
+                  </label>
+                  <div className="space-y-3">
+                    <label className={`flex items-center gap-2 p-3 rounded-lg cursor-pointer transition-all duration-300 ${
+                      newPost.postType === 'now'
+                        ? darkMode
+                          ? 'bg-purple-500/20 border-2 border-purple-500'
+                          : 'bg-purple-100 border-2 border-purple-500'
+                        : darkMode
+                          ? 'bg-slate-800/30 border-2 border-transparent hover:bg-slate-800/50'
+                          : 'bg-white/50 border-2 border-transparent hover:bg-white'
+                    }`}>
+                      <input
+                        type="radio"
+                        checked={newPost.postType === 'now'}
+                        onChange={() => setNewPost({...newPost, postType: 'now'})}
+                        className="w-4 h-4"
+                      />
+                      <span className={`font-medium text-sm ${
+                        darkMode ? 'text-white' : 'text-gray-900'
+                      }`}>
+                        Hemen yayınla
+                      </span>
+                    </label>
+                    
+                    <label className={`flex items-center gap-2 p-3 rounded-lg cursor-pointer transition-all duration-300 ${
+                      newPost.postType === 'future'
+                        ? darkMode
+                          ? 'bg-purple-500/20 border-2 border-purple-500'
+                          : 'bg-purple-100 border-2 border-purple-500'
+                        : darkMode
+                          ? 'bg-slate-800/30 border-2 border-transparent hover:bg-slate-800/50'
+                          : 'bg-white/50 border-2 border-transparent hover:bg-white'
+                    }`}>
+                      <input
+                        type="radio"
+                        checked={newPost.postType === 'future'}
+                        onChange={() => setNewPost({...newPost, postType: 'future'})}
+                        className="w-4 h-4"
+                      />
+                      <span className={`font-medium text-sm ${
+                        darkMode ? 'text-white' : 'text-gray-900'
+                      }`}>
+                        Gelecekte yayınla
+                      </span>
+                    </label>
+                    
+                    {newPost.postType === 'future' && (
+                      <div className="ml-4 space-y-3">
+                        <div className="relative">
+                          <Calendar className={`absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 pointer-events-none ${
+                            darkMode ? 'text-purple-400' : 'text-purple-600'
+                          }`} />
+                          <input
+                            type="date"
+                            value={newPost.futureDate}
+                            onChange={(e) => setNewPost({...newPost, futureDate: e.target.value})}
+                            min={new Date().toISOString().split('T')[0]}
+                            className={`w-full pl-11 pr-4 py-3 rounded-xl transition-all duration-300 focus:ring-4 ${
+                              darkMode 
+                                ? 'bg-slate-800/50 border-purple-500/30 text-white focus:ring-purple-500/30' 
+                                : 'bg-white border-purple-300 text-gray-900 focus:ring-purple-300/50'
+                            } border-2`}
+                          />
+                        </div>
+                        <div className="relative">
+                          <Clock className={`absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 pointer-events-none ${
+                            darkMode ? 'text-purple-400' : 'text-purple-600'
+                          }`} />
+                          <input
+                            type="time"
+                            value={newPost.futureTime}
+                            onChange={(e) => setNewPost({...newPost, futureTime: e.target.value})}
+                            className={`w-full pl-11 pr-4 py-3 rounded-xl transition-all duration-300 focus:ring-4 ${
+                              darkMode 
+                                ? 'bg-slate-800/50 border-purple-500/30 text-white focus:ring-purple-500/30' 
+                                : 'bg-white border-purple-300 text-gray-900 focus:ring-purple-300/50'
+                            } border-2`}
+                          />
+                        </div>
+                        <div className="relative">
+                          <Mail className={`absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 pointer-events-none ${
+                            darkMode ? 'text-purple-400' : 'text-purple-600'
+                          }`} />
+                          <input
+                            type="email"
+                            placeholder="E-posta (hatırlatma için)"
+                            value={newPost.email}
+                            onChange={(e) => setNewPost({...newPost, email: e.target.value})}
+                            className={`w-full pl-11 pr-4 py-3 rounded-xl transition-all duration-300 focus:ring-4 ${
+                              darkMode 
+                                ? 'bg-slate-800/50 border-purple-500/30 text-white placeholder-gray-400 focus:ring-purple-500/30' 
+                                : 'bg-white border-purple-300 text-gray-900 placeholder-gray-500 focus:ring-purple-300/50'
+                            } border-2`}
+                          />
+                        </div>
                       </div>
                     )}
                   </div>
-
-                  <div>
-                    <label className={`block mb-2 font-semibold ${
-                      darkMode ? 'text-purple-300' : 'text-purple-700'
-                    }`}>
-                      Takma Ad:
-                    </label>
-                    <input
-                      type="text"
-                      value={newPost.author}
-                      onChange={(e) => setNewPost({...newPost, author: e.target.value})}
-                      disabled={newPost.isAnonymous}
-                      className={`w-full rounded-xl p-3 transition-all duration-300 focus:ring-4 disabled:opacity-50 ${
-                        darkMode 
-                          ? 'bg-slate-800/50 border-purple-500/30 text-white focus:ring-purple-500/30' 
-                          : 'bg-white border-purple-300 text-gray-900 focus:ring-purple-300/50'
-                      } border-2`}
-                      placeholder="İsteğe bağlı..."
-                    />
-                    <label className={`flex items-center gap-2 mt-2 cursor-pointer ${
-                      darkMode ? 'text-purple-300' : 'text-purple-700'
-                    }`}>
-                      <input
-                        type="checkbox"
-                        checked={newPost.isAnonymous}
-                        onChange={(e) => setNewPost({...newPost, isAnonymous: e.target.checked})}
-                        className="w-4 h-4 rounded"
-                      />
-                      <span className="font-medium text-sm">Anonim olarak paylaş</span>
-                    </label>
-                  </div>
-
-                  <div>
-                    <label className={`block mb-3 font-semibold flex items-center gap-2 ${
-                      darkMode ? 'text-purple-300' : 'text-purple-700'
-                    }`}>
-                      <Calendar className="w-5 h-5" />
-                      Zaman Ayarı:
-                    </label>
-                    <div className="space-y-3">
-                      <label className={`flex items-center gap-2 p-3 rounded-lg cursor-pointer transition-all duration-300 ${
-                        newPost.postType === 'now'
-                          ? darkMode
-                            ? 'bg-purple-500/20 border-2 border-purple-500'
-                            : 'bg-purple-100 border-2 border-purple-500'
-                          : darkMode
-                            ? 'bg-slate-800/30 border-2 border-transparent hover:bg-slate-800/50'
-                            : 'bg-white/50 border-2 border-transparent hover:bg-white'
-                      }`}>
-                        <input
-                          type="radio"
-                          checked={newPost.postType === 'now'}
-                          onChange={() => setNewPost({...newPost, postType: 'now'})}
-                          className="w-4 h-4"
-                        />
-                        <span className={`font-medium text-sm ${
-                          darkMode ? 'text-white' : 'text-gray-900'
-                        }`}>
-                          Hemen yayınla
-                        </span>
-                      </label>
-                      
-                      <label className={`flex items-center gap-2 p-3 rounded-lg cursor-pointer transition-all duration-300 ${
-                        newPost.postType === 'future'
-                          ? darkMode
-                            ? 'bg-purple-500/20 border-2 border-purple-500'
-                            : 'bg-purple-100 border-2 border-purple-500'
-                          : darkMode
-                            ? 'bg-slate-800/30 border-2 border-transparent hover:bg-slate-800/50'
-                            : 'bg-white/50 border-2 border-transparent hover:bg-white'
-                      }`}>
-                        <input
-                          type="radio"
-                          checked={newPost.postType === 'future'}
-                          onChange={() => setNewPost({...newPost, postType: 'future'})}
-                          className="w-4 h-4"
-                        />
-                        <span className={`font-medium text-sm ${
-                          darkMode ? 'text-white' : 'text-gray-900'
-                        }`}>
-                          Gelecekte yayınla
-                        </span>
-                      </label>
-                      
-                      {newPost.postType === 'future' && (
-                        <div className="ml-4 space-y-3">
-                          <div className="relative">
-                            <Calendar className={`absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 pointer-events-none ${
-                              darkMode ? 'text-purple-400' : 'text-purple-600'
-                            }`} />
-                            <input
-                              type="date"
-                              value={newPost.futureDate}
-                              onChange={(e) => setNewPost({...newPost, futureDate: e.target.value})}
-                              min={new Date().toISOString().split('T')[0]}
-                              className={`w-full pl-11 pr-4 py-3 rounded-xl transition-all duration-300 focus:ring-4 ${
-                                darkMode 
-                                  ? 'bg-slate-800/50 border-purple-500/30 text-white focus:ring-purple-500/30' 
-                                  : 'bg-white border-purple-300 text-gray-900 focus:ring-purple-300/50'
-                              } border-2`}
-                            />
-                          </div>
-                          <div className="relative">
-                            <Clock className={`absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 pointer-events-none ${
-                              darkMode ? 'text-purple-400' : 'text-purple-600'
-                            }`} />
-                            <input
-                              type="time"
-                              value={newPost.futureTime}
-                              onChange={(e) => setNewPost({...newPost, futureTime: e.target.value})}
-                              className={`w-full pl-11 pr-4 py-3 rounded-xl transition-all duration-300 focus:ring-4 ${
-                                darkMode 
-                                  ? 'bg-slate-800/50 border-purple-500/30 text-white focus:ring-purple-500/30' 
-                                  : 'bg-white border-purple-300 text-gray-900 focus:ring-purple-300/50'
-                              } border-2`}
-                            />
-                          </div>
-                          <div className="relative">
-                            <Mail className={`absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 pointer-events-none ${
-                              darkMode ? 'text-purple-400' : 'text-purple-600'
-                            }`} />
-                            <input
-                              type="email"
-                              placeholder="E-posta (hatırlatma için)"
-                              value={newPost.email}
-                              onChange={(e) => setNewPost({...newPost, email: e.target.value})}
-                              className={`w-full pl-11 pr-4 py-3 rounded-xl transition-all duration-300 focus:ring-4 ${
-                                darkMode 
-                                  ? 'bg-slate-800/50 border-purple-500/30 text-white placeholder-gray-400 focus:ring-purple-500/30' 
-                                  : 'bg-white border-purple-300 text-gray-900 placeholder-gray-500 focus:ring-purple-300/50'
-                              } border-2`}
-                            />
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={handleSubmit}
-                    disabled={loading}
-                    className="w-full bg-gradient-to-r from-purple-600 via-pink-600 to-purple-600 text-white font-bold py-4 rounded-xl hover:from-purple-700 hover:via-pink-700 hover:to-purple-700 transition-all duration-300 shadow-xl shadow-purple-500/50 disabled:opacity-50 disabled:cursor-not-allowed hover:scale-105 transform"
-                  >
-                    {loading ? 'Gönderiliyor...' : 'Gönder'}
-                  </button>
                 </div>
+
+                <button
+                  onClick={handleSubmit}
+                  disabled={loading}
+                  className="w-full bg-gradient-to-r from-purple-600 via-pink-600 to-purple-600 text-white font-bold py-4 rounded-xl hover:from-purple-700 hover:via-pink-700 hover:to-purple-700 transition-all duration-300 shadow-xl shadow-purple-500/50 disabled:opacity-50 disabled:cursor-not-allowed hover:scale-105 transform"
+                >
+                  {loading ? 'Gönderiliyor...' : 'Gönder'}
+                </button>
               </div>
             </div>
-          )}
-        </div>
-      </main>
-
-      <footer className={`backdrop-blur-xl border-t mt-12 py-8 transition-all duration-300 ${
+          </div>
+        )}
+      </div>
+    </main><footer className={`backdrop-blur-xl border-t mt-12 py-8 transition-all duration-300 ${
         darkMode 
           ? 'bg-black/40 border-purple-500/20' 
           : 'bg-white/40 border-purple-300/30'
