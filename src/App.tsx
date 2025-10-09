@@ -229,9 +229,7 @@ function App() {
     } catch (err) {
       console.error('Error fetching comment counts:', err);
     }
-  };
-
-  const fetchPosts = async () => {
+  };const fetchPosts = async () => {
     try {
       setLoading(true);
       const { data } = await supabase.from('posts').select('*');
@@ -357,7 +355,9 @@ function App() {
       }
       setLoadingMore(false);
     }, 500);
-  };useEffect(() => {
+  };
+
+  useEffect(() => {
     fetchPosts();
     fetchAllCommentCounts();
     
@@ -552,9 +552,7 @@ function App() {
       console.error('Error updating comment upvote:', err);
       showAlert('error', 'Bir hata oluştu!');
     }
-  };
-
-  const handleSubmit = async () => {
+  };const handleSubmit = async () => {
     if (!newPost.content) {
       showAlert('warning', 'Lütfen bir mesaj yazın!');
       return;
@@ -752,7 +750,9 @@ function App() {
             </div>
           </div>
         </div>
-      )}<header className={`sticky top-0 z-50 backdrop-blur-xl border-b transition-all duration-300 ${
+      )}
+
+      <header className={`sticky top-0 z-50 backdrop-blur-xl border-b transition-all duration-300 ${
         darkMode 
           ? 'bg-black/40 border-purple-500/20' 
           : 'bg-white/40 border-purple-300/30'
@@ -848,9 +848,7 @@ function App() {
                 <span className="md:hidden">Mesaj</span>
               </button>
             </div>
-          </div>
-          
-          <div className={`flex items-center justify-between rounded-xl px-4 py-2 transition-all duration-300 ${
+          </div><div className={`flex items-center justify-between rounded-xl px-4 py-2 transition-all duration-300 ${
             darkMode 
               ? 'bg-gradient-to-r from-purple-900/30 to-pink-900/30 border border-purple-500/20' 
               : 'bg-gradient-to-r from-purple-50 to-pink-50 border border-purple-200'
@@ -1066,11 +1064,13 @@ function App() {
                       } ${loadingMore ? 'opacity-50 cursor-not-allowed' : 'hover:shadow-purple-500/50'}`}
                     >
                       <ChevronUp className="w-5 h-5 md:w-6 md:h-6 group-hover:-translate-y-1 transition-transform duration-300" />
-                      <span className="text-xs md:text-base">{loadingMore ? 'Yükleniyor...' : 'Daha fazla geçmişe adım at'}</span>
+                      <span className="text-xs md:text-base whitespace-nowrap">{loadingMore ? 'Yükleniyor...' : 'Daha fazla geçmişe adım at'}</span>
                       <Clock className="w-5 h-5 md:w-6 md:h-6 group-hover:rotate-180 transition-transform duration-500" />
                     </button>
                   </div>
-                )}{sortedDates.map((date, dateIdx) => (
+                )}
+
+                {sortedDates.map((date, dateIdx) => (
                   <div 
                     key={date} 
                     ref={(el) => {
@@ -1154,9 +1154,7 @@ function App() {
                             )}
                           </div>
                         </div>
-                      )}
-
-                      {groupedPosts[date].unlocked.map((post: Post, idx: number) => (
+                      )}{groupedPosts[date].unlocked.map((post: Post, idx: number) => (
                         <div 
                           key={post.id} 
                           className={`relative w-full ${
@@ -1178,7 +1176,7 @@ function App() {
                               </span>
                             </div>
                             
-                            <p className={`text-sm leading-snug mb-2 ${
+                            <p className={`text-sm leading-snug mb-2 break-words ${
                               darkMode ? 'text-white' : 'text-gray-900'
                             }`}>
                               "{post.content}"
@@ -1299,7 +1297,7 @@ function App() {
                                         {comment.comment_time}
                                       </span>
                                     </div>
-                                    <p className={`mb-1 ${
+                                    <p className={`mb-1 break-words ${
                                       darkMode ? 'text-white' : 'text-gray-900'
                                     }`}>
                                       {comment.content}
@@ -1523,7 +1521,7 @@ function App() {
                       } ${loadingMore ? 'opacity-50 cursor-not-allowed' : 'hover:shadow-pink-500/50'}`}
                     >
                       <Sparkles className="w-5 h-5 md:w-6 md:h-6 group-hover:rotate-180 transition-transform duration-500" />
-                      <span className="text-xs md:text-base">{loadingMore ? 'Yükleniyor...' : 'Daha fazla geleceğe adım at'}</span>
+                      <span className="text-xs md:text-base whitespace-nowrap">{loadingMore ? 'Yükleniyor...' : 'Daha fazla geleceğe adım at'}</span>
                       <ChevronDown className="w-5 h-5 md:w-6 md:h-6 group-hover:translate-y-1 transition-transform duration-300" />
                     </button>
                   </div>
@@ -1531,12 +1529,12 @@ function App() {
               </div>
             </div>
           )}
-        </div><div className={`transition-all duration-500 ${
+        </div>
+
+        <div className={`transition-all duration-500 ${
           activeView === 'post' 
             ? 'opacity-100 translate-x-0' 
-            : activeView === 'timeline' 
-              ? 'opacity-0 translate-x-full absolute inset-0' 
-              : 'opacity-0 -translate-x-full absolute inset-0'
+            : 'opacity-0 translate-x-full absolute inset-0 pointer-events-none'
         }`}>
           {activeView === 'post' && (
             <div className="max-w-2xl mx-auto">
@@ -1716,89 +1714,89 @@ function App() {
                               onChange={(e) => setNewPost({...newPost, futureTime: e.target.value})}
                               className={`w-full pl-10 md:pl-11 pr-4 py-2 md:py-3 rounded-xl transition-all duration-300 focus:ring-4 text-sm md:text-base ${
                                 darkMode 
-                                  ? 'bg-slate-800/50 border-purple-500/30 text-white focus:ring-purple-500/30' 
-                                  : 'bg-white border-purple-300 text-gray-900 focus:ring-purple-300/50'
-                              } border-2`}
-                            />
-                          </div>
-                          <div className="relative">
-                            <Mail className={`absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 md:w-5 md:h-5 pointer-events-none ${
-                              darkMode ? 'text-purple-400' : 'text-purple-600'
-                            }`} />
-                            <input
-                              type="email"
-                              placeholder="E-posta (hatırlatma için)"
-                              value={newPost.email}
-                              onChange={(e) => setNewPost({...newPost, email: e.target.value})}
-                              className={`w-full pl-10 md:pl-11 pr-4 py-2 md:py-3 rounded-xl transition-all duration-300 focus:ring-4 text-sm md:text-base ${
-                                darkMode 
-                                  ? 'bg-slate-800/50 border-purple-500/30 text-white placeholder-gray-400 focus:ring-purple-500/30' 
-                                  : 'bg-white border-purple-300 text-gray-900 placeholder-gray-500 focus:ring-purple-300/50'
-                              } border-2`}
-                            />
-                          </div>
+                                ? 'bg-slate-800/50 border-purple-500/30 text-white focus:ring-purple-500/30' 
+                                : 'bg-white border-purple-300 text-gray-900 focus:ring-purple-300/50'
+                            } border-2`}
+                          />
                         </div>
-                      )}
-                    </div>
+                        <div className="relative">
+                          <Mail className={`absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 md:w-5 md:h-5 pointer-events-none ${
+                            darkMode ? 'text-purple-400' : 'text-purple-600'
+                          }`} />
+                          <input
+                            type="email"
+                            placeholder="E-posta (hatırlatma için)"
+                            value={newPost.email}
+                            onChange={(e) => setNewPost({...newPost, email: e.target.value})}
+                            className={`w-full pl-10 md:pl-11 pr-4 py-2 md:py-3 rounded-xl transition-all duration-300 focus:ring-4 text-sm md:text-base ${
+                              darkMode 
+                                ? 'bg-slate-800/50 border-purple-500/30 text-white placeholder-gray-400 focus:ring-purple-500/30' 
+                                : 'bg-white border-purple-300 text-gray-900 placeholder-gray-500 focus:ring-purple-300/50'
+                            } border-2`}
+                          />
+                        </div>
+                      </div>
+                    )}
                   </div>
-
-                  <button
-                    onClick={handleSubmit}
-                    disabled={loading}
-                    className="w-full bg-gradient-to-r from-purple-600 via-pink-600 to-purple-600 text-white font-bold py-3 md:py-4 rounded-xl hover:from-purple-700 hover:via-pink-700 hover:to-purple-700 transition-all duration-300 shadow-xl shadow-purple-500/50 disabled:opacity-50 disabled:cursor-not-allowed hover:scale-105 transform text-sm md:text-base"
-                  >
-                    {loading ? 'Gönderiliyor...' : 'Gönder'}
-                  </button>
                 </div>
+
+                <button
+                  onClick={handleSubmit}
+                  disabled={loading}
+                  className="w-full bg-gradient-to-r from-purple-600 via-pink-600 to-purple-600 text-white font-bold py-3 md:py-4 rounded-xl hover:from-purple-700 hover:via-pink-700 hover:to-purple-700 transition-all duration-300 shadow-xl shadow-purple-500/50 disabled:opacity-50 disabled:cursor-not-allowed hover:scale-105 transform text-sm md:text-base"
+                >
+                  {loading ? 'Gönderiliyor...' : 'Gönder'}
+                </button>
               </div>
             </div>
-          )}
-        </div>
-      </main>
-
-      <footer className={`backdrop-blur-xl border-t mt-12 py-6 md:py-8 transition-all duration-300 ${
-        darkMode 
-          ? 'bg-black/40 border-purple-500/20' 
-          : 'bg-white/40 border-purple-300/30'
-      }`}>
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <div className="mb-3">
-            <h3 className={`text-lg md:text-xl font-bold mb-1 bg-gradient-to-r ${
-              darkMode 
-                ? 'from-purple-400 via-pink-400 to-purple-400' 
-                : 'from-purple-600 via-pink-600 to-purple-600'
-            } bg-clip-text text-transparent`}>
-              {siteInfo.name}
-            </h3>
-            <p className={`text-xs font-medium ${
-              darkMode ? 'text-purple-400' : 'text-purple-600'
-            }`}>
-              {siteInfo.domain}
-            </p>
           </div>
-          <p className={`text-sm font-medium mb-1 ${
-            darkMode ? 'text-purple-300' : 'text-purple-700'
-          }`}>
-            {siteInfo.tagline}
-          </p>
-          <p className={`text-xs mb-4 ${
+        )}
+      </div>
+    </main>
+
+    <footer className={`backdrop-blur-xl border-t mt-12 py-6 md:py-8 transition-all duration-300 ${
+      darkMode 
+        ? 'bg-black/40 border-purple-500/20' 
+        : 'bg-white/40 border-purple-300/30'
+    }`}>
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+        <div className="mb-3">
+          <h3 className={`text-lg md:text-xl font-bold mb-1 bg-gradient-to-r ${
+            darkMode 
+              ? 'from-purple-400 via-pink-400 to-purple-400' 
+              : 'from-purple-600 via-pink-600 to-purple-600'
+          } bg-clip-text text-transparent`}>
+            {siteInfo.name}
+          </h3>
+          <p className={`text-xs font-medium ${
             darkMode ? 'text-purple-400' : 'text-purple-600'
           }`}>
-            {siteInfo.subtitle}
+            {siteInfo.domain}
           </p>
-          <div className={`pt-3 border-t ${
-            darkMode ? 'border-purple-500/20' : 'border-purple-300/30'
-          }`}>
-            <p className={`text-xs ${
-              darkMode ? 'text-purple-400/60' : 'text-purple-600/60'
-            }`}>
-              © 2025 {siteInfo.name}. Tüm hakları saklıdır.
-            </p>
-          </div>
         </div>
-      </footer>
-    </div>
-  );
+        <p className={`text-sm font-medium mb-1 ${
+          darkMode ? 'text-purple-300' : 'text-purple-700'
+        }`}>
+          {siteInfo.tagline}
+        </p>
+        <p className={`text-xs mb-4 ${
+          darkMode ? 'text-purple-400' : 'text-purple-600'
+        }`}>
+          {siteInfo.subtitle}
+        </p>
+        <div className={`pt-3 border-t ${
+          darkMode ? 'border-purple-500/20' : 'border-purple-300/30'
+        }`}>
+          <p className={`text-xs ${
+            darkMode ? 'text-purple-400/60' : 'text-purple-600/60'
+          }`}>
+            © 2025 {siteInfo.name}. Tüm hakları saklıdır.
+          </p>
+        </div>
+      </div>
+    </footer>
+  </div>
+);
 }
 
 export default App;
